@@ -377,90 +377,106 @@ export function StudioInterface() {
 
             {/* --- Output Area --- */}
             {showOutputModal && (
-              <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+              <div className="fixed inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center z-50 p-4 transition-all duration-300">
                 <motion.div
                   initial={{ opacity: 0, scale: 0.95, y: 20 }}
                   animate={{ opacity: 1, scale: 1, y: 0 }}
                   exit={{ opacity: 0, scale: 0.95, y: 20 }}
-                  transition={{ duration: 0.2 }}
-                  className="bg-card rounded-lg shadow-xl flex flex-col p-6 w-full max-w-5xl relative max-h-[95vh]"
+                  transition={{ duration: 0.3, ease: "easeOut" }}
+                  className="bg-card border border-border/40 rounded-lg shadow-2xl flex flex-col p-6 w-full max-w-5xl relative max-h-[95vh] animate-in fade-in-0 zoom-in-95"
                 >
-                  <div className="flex justify-between items-center mb-4">
-                    <h2 className="text-xl font-bold">Generated Model</h2>
-                    <div className="flex items-center space-x-2">
+                  <div className="flex justify-between items-center mb-6 pb-4 border-b border-border/30">
+                    <h2 className="text-2xl font-bold text-foreground">Generated Model</h2>
+                    <div className="flex items-center gap-3">
                       <Button
                         onClick={handleDownload}
                         disabled={!generatedImageData || isLoading}
                         variant="outline"
-                        className="gap-2"
+                        size="icon"
+                        className="h-9 w-9"
+                        title="Download"
                       >
                         <Download className="h-4 w-4" />
-                        Download
                       </Button>
                       <Button
                         onClick={handleReset}
                         disabled={isLoading}
                         variant="outline"
-                        className="gap-2"
-                      >
-                        Reset
-                      </Button>
-                      <Button
-                        variant="ghost"
                         size="icon"
-                        onClick={() => setShowOutputModal(false)}
+                        className="h-9 w-9"
+                        title="Reset"
                       >
-                        <X className="h-5 w-5" />
+                        <Box className="h-4 w-4" />
                       </Button>
                     </div>
                   </div>
 
-                  <div className="space-y-4 overflow-y-auto">
-                    {/* Display Constructed Prompt */}
-                    {generatedPrompt && !isLoading && (
-                      <div className="p-3 bg-muted/50 rounded-md text-sm text-muted-foreground break-all">
-                        <strong>Prompt:</strong> {generatedPrompt}
-                      </div>
-                    )}
+                  <div className="flex flex-col md:flex-row gap-6 h-full overflow-hidden">
+                    {/* Image Section - Left Side */}
+                    <div className="md:w-2/3 flex flex-col">
+                      {/* Loading State */}
+                      {isLoading && (
+                        <div className="flex flex-col justify-center items-center p-10 rounded-md border border-dashed border-muted-foreground/20 h-full bg-card/50">
+                          <Loader2 className="h-10 w-10 animate-spin text-primary mb-4" />
+                          <span className="text-muted-foreground">
+                            Generating your image...
+                          </span>
+                        </div>
+                      )}
 
-                    {/* Loading State */}
-                    {isLoading && (
-                      <div className="flex justify-center items-center p-8 rounded-md border border-dashed min-h-[400px]">
-                        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-                        <span className="ml-2 text-muted-foreground">
-                          Generating your image...
-                        </span>
-                      </div>
-                    )}
+                      {/* Error State */}
+                      {error && !isLoading && (
+                        <Alert variant="destructive" className="border border-destructive/20 shadow-sm">
+                          <Terminal className="h-4 w-4" />
+                          <AlertTitle>Generation Failed</AlertTitle>
+                          <AlertDescription>{error}</AlertDescription>
+                        </Alert>
+                      )}
 
-                    {/* Error State */}
-                    {error && !isLoading && (
-                      <Alert variant="destructive">
-                        <Terminal className="h-4 w-4" />
-                        <AlertTitle>Generation Failed</AlertTitle>
-                        <AlertDescription>{error}</AlertDescription>
-                      </Alert>
-                    )}
+                      {/* Success State - Display Image */}
+                      {generatedImageData && !isLoading && !error && (
+                        <div className="flex items-center justify-center h-full bg-accent/5 p-4 rounded-lg border border-accent/20 shadow-md overflow-hidden">
+                          <img
+                            src={generatedImageData}
+                            alt={generatedPrompt || "Generated image"}
+                            className="max-w-full max-h-full object-contain rounded-md shadow-sm"
+                          />
+                        </div>
+                      )}
 
-                    {/* Success State - Display Image */}
-                    {generatedImageData && !isLoading && !error && (
-                      <div className="flex items-center justify-center h-auto min-h-[400px] border rounded-md overflow-hidden">
-                        <img
-                          src={generatedImageData}
-                          alt={generatedPrompt || "Generated image"}
-                          className="max-w-full max-h-[calc(80vh-200px)] object-contain"
-                        />
-                      </div>
-                    )}
+                      {/* Placeholder State */}
+                      {!isLoading && !generatedImageData && !error && (
+                        <div className="flex justify-center items-center p-10 rounded-md border border-dashed border-muted-foreground/30 h-full bg-muted/10">
+                          <span className="text-muted-foreground">
+                            Generated model will be shown here.
+                          </span>
+                        </div>
+                      )}
+                    </div>
 
-                    {/* Placeholder State */}
-                    {!isLoading && !generatedImageData && !error && (
-                      <div className="flex justify-center items-center p-8 rounded-md border border-dashed border-muted-foreground/30 min-h-[400px]">
-                        <span className="text-muted-foreground">
-                          Generated model will be shown here.
-                        </span>
+                    {/* Right Side Column - Prompt & Actions */}
+                    <div className="md:w-1/3 flex flex-col gap-4">
+                      {/* Prompt Section */}
+                      <div className="flex-1">
+                        {generatedPrompt && !isLoading ? (
+                          <div className="p-4 bg-muted rounded-md text-sm text-muted-foreground h-full overflow-y-auto shadow-sm">
+                            <h3 className="font-medium mb-2 text-center">PROMPT</h3>
+                            <p>{generatedPrompt}</p>
+                          </div>
+                        ) : (
+                          <div className="p-4 bg-muted rounded-md text-sm text-muted-foreground h-full flex items-center justify-center">
+                            <span>{isLoading ? "Generating prompt..." : "Prompt will appear here"}</span>
+                          </div>
+                        )}
                       </div>
-                    )}
+                      
+                      {/* Action Button */}
+                      <div className="mt-auto">
+                        <Button className="w-full p-4" size="lg">
+                          Put Clothes/Articles
+                        </Button>
+                      </div>
+                    </div>
                   </div>
                 </motion.div>
               </div>
