@@ -7,8 +7,8 @@ import { Toaster } from '@/components/ui/toaster';
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: 'Live Listing - AI Virtual Try On',
-  description: 'Try on fashion with the power of AI',
+  title: 'Live Listing - No Photoshoots Required',
+  description: 'Create realistic product images with AI',
   icons: {
     icon: [
       {
