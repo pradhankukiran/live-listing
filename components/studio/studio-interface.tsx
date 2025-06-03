@@ -2,10 +2,9 @@
 
 import { useState, useRef, useEffect } from "react";
 import { motion } from "framer-motion";
-import { Wand2, Loader2, Download, X, Dice5, Box } from "lucide-react";
+import { Wand2, Loader2, Download, X, Dice5, Box, RefreshCw, Terminal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Terminal } from "lucide-react";
 import { SharedNavbar } from "@/components/shared/shared-navbar";
 import {
   Select,
@@ -27,10 +26,14 @@ const keyToLabel = (key: string) => {
 };
 
 export function StudioInterface() {
-  // State for image generation
+  // Use a separate state to track if component has mounted on client
+  const [isMounted, setIsMounted] = useState(false);
+
+  // State for image generation with default initial values (for SSR)
   const [selectionStates, setSelectionStates] = useState<
     Record<PromptOptionsKey, string>
   >(() => {
+    // Default initialization (works on server)
     const initialStates: Record<string, string> = {};
     (Object.keys(promptOptions) as Array<PromptOptionsKey>).forEach((key) => {
       if (Array.isArray(promptOptions[key])) {
@@ -48,6 +51,42 @@ export function StudioInterface() {
   const [error, setError] = useState<string | null>(null);
   const [generatedPrompt, setGeneratedPrompt] = useState<string>("");
   const [showOutputModal, setShowOutputModal] = useState(false);
+
+  // After mount, load from localStorage
+  useEffect(() => {
+    // Load selections from localStorage
+    try {
+      const savedSelections = localStorage.getItem('studioSelections');
+      if (savedSelections) {
+        setSelectionStates(JSON.parse(savedSelections));
+      }
+
+      // Load aspect ratio from localStorage
+      const savedAspectRatio = localStorage.getItem('studioAspectRatio');
+      if (savedAspectRatio) {
+        setAspectRatio(savedAspectRatio);
+      }
+    } catch (e) {
+      console.error('Failed to load saved settings:', e);
+    }
+
+    // Mark as mounted
+    setIsMounted(true);
+  }, []);
+
+  // Save selections to localStorage whenever they change, but only after initial mount
+  useEffect(() => {
+    if (isMounted) {
+      localStorage.setItem('studioSelections', JSON.stringify(selectionStates));
+    }
+  }, [selectionStates, isMounted]);
+
+  // Save aspect ratio to localStorage whenever it changes, but only after initial mount
+  useEffect(() => {
+    if (isMounted) {
+      localStorage.setItem('studioAspectRatio', aspectRatio);
+    }
+  }, [aspectRatio, isMounted]);
 
   const handleSelectionChange = (key: PromptOptionsKey, value: string) => {
     setSelectionStates((prev) => ({ ...prev, [key]: value }));
@@ -93,7 +132,7 @@ export function StudioInterface() {
       newSelections["facial_hair"] = facialHairOptions[randomIndex];
     } else {
       // If gender is not Male, set facial_hair to the default "None"
-      newSelections["facial_hair"] = promptOptions.facial_hair[0]; 
+      newSelections["facial_hair"] = promptOptions.facial_hair[0];
     }
 
     setSelectionStates(newSelections as Record<PromptOptionsKey, string>);
@@ -114,9 +153,21 @@ export function StudioInterface() {
     setGeneratedPrompt("");
     setShowOutputModal(false);
 
+    // Clear saved selections from localStorage
+    localStorage.removeItem('studioSelections');
+    localStorage.removeItem('studioAspectRatio');
+
     setTimeout(() => {
       window.scrollTo({ top: 0, behavior: "smooth" });
     }, 100);
+  };
+
+  // New function to just close the modal without resetting selections
+  const handleCloseModal = () => {
+    setGeneratedImageData(null);
+    setError(null);
+    setGeneratedPrompt("");
+    setShowOutputModal(false);
   };
 
   const handleDownload = () => {
@@ -175,10 +226,10 @@ export function StudioInterface() {
       hairDescription = `${hair_style.toLowerCase()} ${hair_color.toLowerCase()} hair`;
     }
 
-    constructedPrompt = `A ${pose_level?.toLowerCase()}, ${camera_perspective?.toLowerCase()} photo of a ${age?.toLowerCase()} ${ethnicity?.toLowerCase()} ${gender?.toLowerCase()} model with ${skin_tone?.toLowerCase()} skin, ${hairDescription}${facialHairClause}. The model is wearing minimal, neutral base clothing, posed in a ${pose?.toLowerCase()} with hands ${hand_position
+    constructedPrompt = `A ${pose_level?.toLowerCase()}, ${camera_perspective?.toLowerCase()} photo of a ${age?.toLowerCase()} ${ethnicity?.toLowerCase()} ${gender?.toLowerCase()} model with ${skin_tone?.toLowerCase()} skin, ${hairDescription}${facialHairClause}. The model is wearing plain, form-fitting under clothing suitable for catalog photography, posed in a ${pose?.toLowerCase()} with hands ${hand_position
       ?.toLowerCase()
       .replace("at sides", "at their sides")}. ${expression?.toLowerCase()} facial expression, set against a ${background?.toLowerCase()} background with professional studio lighting. High-resolution e-commerce catalog-style image.`;
-    
+
     // Clean up potential double commas or leading/trailing commas/spaces if some values are empty, though with current setup most should be pre-filled.
     constructedPrompt = constructedPrompt.replace(/,\s*,/g, ',').replace(/,\s*\./g, '.').trim();
 
@@ -218,10 +269,9 @@ export function StudioInterface() {
   };
 
   const isGenerateDisabled = () => {
-    // Check if any of the required fields are empty or not set to a default
-    // For simplicity, let's assume all fields from promptOptions (excluding facial_hair logic handled elsewhere)
-    // must have a selection.
-    // This can be refined based on actual "required" fields for a coherent prompt.
+    if (!isMounted) return false; // Don't disable on server
+
+    // The existing logic
     const hasAllSelections = (
       Object.keys(promptOptions) as Array<PromptOptionsKey>
     ).every((key) => {
@@ -335,7 +385,10 @@ export function StudioInterface() {
                         <SelectItem value="16:9">Landscape (16:9)</SelectItem>
                         <SelectItem value="9:16">Portrait (9:16)</SelectItem>
                         <SelectItem value="4:3">Standard (4:3)</SelectItem>
-                        <SelectItem value="3:4">Photo (3:4)</SelectItem>
+                        <SelectItem value="3:2">DSLR (3:2)</SelectItem>
+                        <SelectItem value="4:5">Portrait (4:5)</SelectItem>
+                        <SelectItem value="21:9">Ultrawide (21:9)</SelectItem>
+
                       </SelectContent>
                     </Select>
                   </div>
@@ -343,21 +396,30 @@ export function StudioInterface() {
 
                 {/* --- Generate Button --- */}
                 <div className="mt-6 flex justify-between items-center">
-                  <div className="flex-1 flex justify-start">
+                  <div className="flex-1 flex justify-start gap-2">
                     <Button
                       onClick={handleRandomise}
-                      disabled={isLoading}
+                      disabled={isMounted && isLoading}
                       variant="outline"
                       className="gap-2"
                     >
                       <Box className="h-4 w-4" />
                       Randomise
                     </Button>
+                    <Button
+                      onClick={handleReset}
+                      disabled={isMounted && isLoading}
+                      variant="outline"
+                      size="icon"
+                      title="Reset to defaults"
+                    >
+                      <RefreshCw className="h-4 w-4" />
+                    </Button>
                   </div>
                   <div className="flex justify-center flex-1">
                     <Button
                       onClick={handleGenerate}
-                      disabled={isGenerateDisabled()}
+                      disabled={isMounted ? isGenerateDisabled() : false}
                       className="gap-2 w-full sm:w-auto"
                     >
                       {isLoading ? (
@@ -377,105 +439,111 @@ export function StudioInterface() {
 
             {/* --- Output Area --- */}
             {showOutputModal && (
-              <div className="fixed inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center z-50 p-4 transition-all duration-300">
+              <div className="fixed inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto">
                 <motion.div
                   initial={{ opacity: 0, scale: 0.95, y: 20 }}
                   animate={{ opacity: 1, scale: 1, y: 0 }}
                   exit={{ opacity: 0, scale: 0.95, y: 20 }}
                   transition={{ duration: 0.3, ease: "easeOut" }}
-                  className="bg-card border border-border/40 rounded-lg shadow-2xl flex flex-col p-6 w-full max-w-5xl relative max-h-[95vh] animate-in fade-in-0 zoom-in-95"
+                  className="bg-card border border-border/40 rounded-xl shadow-lg flex flex-col w-full max-w-5xl relative m-4"
                 >
-                  <div className="flex justify-between items-center mb-6 pb-4 border-b border-border/30">
-                    <h2 className="text-2xl font-bold text-foreground">Generated Model</h2>
+                  {/* Header */}
+                  <div className="flex justify-between items-center p-5 border-b border-border/20">
+                    <h2 className="text-xl font-semibold text-foreground">Generated Model</h2>
                     <div className="flex items-center gap-3">
                       <Button
                         onClick={handleDownload}
-                        disabled={!generatedImageData || isLoading}
-                        variant="outline"
-                        size="icon"
-                        className="h-9 w-9"
-                        title="Download"
+                        disabled={isMounted ? (!generatedImageData || isLoading) : false}
+                        variant="secondary"
+                        className="flex items-center justify-center gap-2 px-4"
+                        title="Download Image"
                       >
-                        <Download className="h-4 w-4" />
+                        <Download strokeWidth={2} />
+                        <span>Download</span>
                       </Button>
                       <Button
-                        onClick={handleReset}
-                        disabled={isLoading}
+                        onClick={handleCloseModal}
                         variant="outline"
-                        size="icon"
-                        className="h-9 w-9"
-                        title="Reset"
+                        className="flex items-center justify-center gap-2 px-4"
+                        title="Close"
                       >
-                        <Box className="h-4 w-4" />
+                        <X strokeWidth={2} />
+                        <span>Close</span>
                       </Button>
                     </div>
                   </div>
 
-                  <div className="flex flex-col md:flex-row gap-6 h-full overflow-hidden">
+                  {/* Content */}
+                  <div className="flex flex-col md:flex-row p-5 gap-5">
                     {/* Image Section - Left Side */}
                     <div className="md:w-2/3 flex flex-col">
-                      {/* Loading State */}
-                      {isLoading && (
-                        <div className="flex flex-col justify-center items-center p-10 rounded-md border border-dashed border-muted-foreground/20 h-full bg-card/50">
-                          <Loader2 className="h-10 w-10 animate-spin text-primary mb-4" />
-                          <span className="text-muted-foreground">
-                            Generating your image...
-                          </span>
-                        </div>
-                      )}
+                      <div className="aspect-square md:aspect-auto md:h-[500px] rounded-lg overflow-hidden bg-muted/10 flex items-center justify-center">
+                        {/* Loading State */}
+                        {isLoading && (
+                          <div className="flex flex-col justify-center items-center h-full w-full">
+                            <Loader2 className="h-8 w-8 animate-spin text-primary mb-3" />
+                            <span className="text-muted-foreground text-sm">
+                              Generating your image...
+                            </span>
+                          </div>
+                        )}
 
-                      {/* Error State */}
-                      {error && !isLoading && (
-                        <Alert variant="destructive" className="border border-destructive/20 shadow-sm">
-                          <Terminal className="h-4 w-4" />
-                          <AlertTitle>Generation Failed</AlertTitle>
-                          <AlertDescription>{error}</AlertDescription>
-                        </Alert>
-                      )}
+                        {/* Error State */}
+                        {error && !isLoading && (
+                          <div className="p-4 w-full max-w-md">
+                            <Alert variant="destructive" className="border-destructive/20">
+                              <Terminal className="h-4 w-4" />
+                              <AlertTitle>Generation Failed</AlertTitle>
+                              <AlertDescription>{error}</AlertDescription>
+                            </Alert>
+                          </div>
+                        )}
 
-                      {/* Success State - Display Image */}
-                      {generatedImageData && !isLoading && !error && (
-                        <div className="flex items-center justify-center h-full bg-accent/5 p-4 rounded-lg border border-accent/20 shadow-md overflow-hidden">
+                        {/* Success State - Display Image */}
+                        {generatedImageData && !isLoading && !error && (
                           <img
                             src={generatedImageData}
                             alt={generatedPrompt || "Generated image"}
-                            className="max-w-full max-h-full object-contain rounded-md shadow-sm"
+                            className="h-full w-full object-contain"
                           />
-                        </div>
-                      )}
+                        )}
 
-                      {/* Placeholder State */}
-                      {!isLoading && !generatedImageData && !error && (
-                        <div className="flex justify-center items-center p-10 rounded-md border border-dashed border-muted-foreground/30 h-full bg-muted/10">
-                          <span className="text-muted-foreground">
-                            Generated model will be shown here.
-                          </span>
-                        </div>
-                      )}
+                        {/* Placeholder State */}
+                        {!isLoading && !generatedImageData && !error && (
+                          <div className="text-center p-6">
+                            <span className="text-muted-foreground text-sm">
+                              Generated model will appear here
+                            </span>
+                          </div>
+                        )}
+                      </div>
                     </div>
 
                     {/* Right Side Column - Prompt & Actions */}
                     <div className="md:w-1/3 flex flex-col gap-4">
                       {/* Prompt Section */}
-                      <div className="flex-1">
-                        {generatedPrompt && !isLoading ? (
-                          <div className="p-4 bg-muted rounded-md text-sm text-muted-foreground h-full overflow-y-auto shadow-sm">
-                            <h3 className="font-medium mb-2 text-center">PROMPT</h3>
-                            <p>{generatedPrompt}</p>
-                          </div>
-                        ) : (
-                          <div className="p-4 bg-muted rounded-md text-sm text-muted-foreground h-full flex items-center justify-center">
-                            <span>{isLoading ? "Generating prompt..." : "Prompt will appear here"}</span>
-                          </div>
-                        )}
+                      <div className="flex-grow">
+                        <h3 className="text-sm font-medium mb-2 text-muted-foreground">Generated Prompt</h3>
+                        <div className="bg-muted/30 rounded-md p-4 text-sm text-muted-foreground min-h-[300px] border border-border/10">
+                          {generatedPrompt ? (
+                            <p className="text-justify">{generatedPrompt}</p>
+                          ) : (
+                            <div className="h-full flex items-center justify-center">
+                              <span>Prompt will appear here</span>
+                            </div>
+                          )}
+                        </div>
                       </div>
-                      
+
                       {/* Action Button */}
-                      <div className="mt-auto">
-                        <Button className="w-full p-4" size="lg">
-                          Put Clothes/Articles
-                        </Button>
-                      </div>
+                      <Button
+                        className="mt-auto w-full gap-2"
+                        size="lg"
+                        variant="default"
+                      >
+                        <Box className="h-4 w-4" />
+                        Customize Clothing
+                      </Button>
                     </div>
                   </div>
                 </motion.div>
