@@ -30,6 +30,7 @@ export async function POST(request: NextRequest) {
 
     const input: any = {
       prompt: prompt,
+      aspect_ratio: aspectRatio || "1:1", // Use provided aspect ratio or default
       seed: 0,  // Default seed to 0 for reproducible generation
       safety_tolerance: 6,  // Default safety tolerance to 6 (most permissive)
     };
@@ -41,28 +42,6 @@ export async function POST(request: NextRequest) {
     
     if (inputImage) {
       input.input_image = inputImage;
-    }
-    
-    // Handle aspect ratio - map from string like "16:9" to model's enum values
-    if (aspectRatio) {
-      // Check if aspectRatio is already in the format expected by the model
-      const validAspectRatios = [
-        "match_input_image", "1:1", "16:9", "9:16", "4:3", "3:4", 
-        "3:2", "2:3", "4:5", "5:4", "21:9", "9:21", "2:1", "1:2"
-      ];
-      
-      if (validAspectRatios.includes(aspectRatio)) {
-        input.aspect_ratio = aspectRatio;
-      } else {
-        // Default to 1:1 if not in valid format
-        input.aspect_ratio = "1:1";
-      }
-    } else if (inputImage) {
-      // Default to match input image if input image is provided
-      input.aspect_ratio = "match_input_image";
-    } else {
-      // Default to square if nothing specified
-      input.aspect_ratio = "1:1";
     }
     
     // Override default safety tolerance if explicitly provided

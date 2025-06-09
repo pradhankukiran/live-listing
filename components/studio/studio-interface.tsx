@@ -1,8 +1,16 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { motion } from "framer-motion";
-import { Wand2, Loader2, Download, X, Dice5, Box, RefreshCw, Terminal } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  Wand2,
+  Loader2,
+  Download,
+  X,
+  Box,
+  RefreshCw,
+  Terminal,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { SharedNavbar } from "@/components/shared/shared-navbar";
@@ -13,7 +21,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { promptOptions, PromptOptionsKey } from "@/lib/prompt-options";
+import { promptOptions } from "@/lib/prompt-options";
+
+type SelectionState = {
+  gender: string;
+  hair_color: string;
+  hair_style: string;
+  facial_hair: string;
+  body_type: string;
+  age: string;
+  expression: string;
+  background: string;
+};
 
 // Helper function to capitalize first letter for display
 const capitalizeFirstLetter = (string: string) => {
@@ -25,25 +44,37 @@ const keyToLabel = (key: string) => {
   return key.split("_").map(capitalizeFirstLetter).join(" ");
 };
 
+// Define the order of dropdowns
+const dropdownOrder: (keyof SelectionState)[] = [
+  "gender",
+  "age",
+  "body_type",
+  "hair_color",
+  "hair_style",
+  "facial_hair",
+  "expression",
+  "background",
+];
+
 export function StudioInterface() {
-  // Use a separate state to track if component has mounted on client
   const [isMounted, setIsMounted] = useState(false);
 
-  // State for image generation with default initial values (for SSR)
-  const [selectionStates, setSelectionStates] = useState<
-    Record<PromptOptionsKey, string>
-  >(() => {
-    // Default initialization (works on server)
-    const initialStates: Record<string, string> = {};
-    (Object.keys(promptOptions) as Array<PromptOptionsKey>).forEach((key) => {
-      if (Array.isArray(promptOptions[key])) {
-        initialStates[key] = (promptOptions[key] as string[])[0];
-      }
-    });
-    return initialStates;
-  });
+  const getInitialState = (): SelectionState => {
+    return {
+      gender: promptOptions.gender[0],
+      hair_color: promptOptions.hair_color[0],
+      hair_style: promptOptions.hair_style_male[0],
+      facial_hair: promptOptions.facial_hair[0],
+      body_type: promptOptions.body_type[0],
+      age: promptOptions.age[0],
+      expression: promptOptions.expression[0],
+      background: promptOptions.background[0],
+    };
+  };
 
-  const [aspectRatio, setAspectRatio] = useState("1:1");
+  const [selectionStates, setSelectionStates] = useState<SelectionState>(
+    getInitialState()
+  );
   const [isLoading, setIsLoading] = useState(false);
   const [generatedImageData, setGeneratedImageData] = useState<string | null>(
     null
@@ -52,127 +83,112 @@ export function StudioInterface() {
   const [generatedPrompt, setGeneratedPrompt] = useState<string>("");
   const [showOutputModal, setShowOutputModal] = useState(false);
 
-  // After mount, load from localStorage
   useEffect(() => {
-    // Load selections from localStorage
     try {
-      const savedSelections = localStorage.getItem('studioSelections');
+      const savedSelections = localStorage.getItem("studioSelections");
       if (savedSelections) {
         setSelectionStates(JSON.parse(savedSelections));
       }
-
-      // Load aspect ratio from localStorage
-      const savedAspectRatio = localStorage.getItem('studioAspectRatio');
-      if (savedAspectRatio) {
-        setAspectRatio(savedAspectRatio);
-      }
     } catch (e) {
-      console.error('Failed to load saved settings:', e);
+      console.error("Failed to load saved settings:", e);
     }
-
-    // Mark as mounted
     setIsMounted(true);
   }, []);
 
-  // Save selections to localStorage whenever they change, but only after initial mount
   useEffect(() => {
     if (isMounted) {
-      localStorage.setItem('studioSelections', JSON.stringify(selectionStates));
+      localStorage.setItem("studioSelections", JSON.stringify(selectionStates));
     }
   }, [selectionStates, isMounted]);
 
-  // Save aspect ratio to localStorage whenever it changes, but only after initial mount
-  useEffect(() => {
-    if (isMounted) {
-      localStorage.setItem('studioAspectRatio', aspectRatio);
-    }
-  }, [aspectRatio, isMounted]);
-
-  const handleSelectionChange = (key: PromptOptionsKey, value: string) => {
-    setSelectionStates((prev) => ({ ...prev, [key]: value }));
-  };
-
-  useEffect(() => {
-    // Reset facial hair if gender changes from Male
-    if (
-      selectionStates.gender !== "Male" &&
-      selectionStates.facial_hair !== promptOptions.facial_hair[0]
-    ) {
-      setSelectionStates((prev) => ({
-        ...prev,
-        facial_hair: promptOptions.facial_hair[0],
-      }));
-    }
-  }, [selectionStates.gender, selectionStates.facial_hair]);
-
-  const handleRandomise = () => {
-    const newSelections: Partial<Record<PromptOptionsKey, string>> = {};
-    let randomisedGender = "";
-
-    (Object.keys(promptOptions) as Array<PromptOptionsKey>).forEach((key) => {
-      const optionsArray = promptOptions[key] as string[];
-      if (Array.isArray(optionsArray) && optionsArray.length > 0) {
-        if (key === "facial_hair") {
-          // Skip facial_hair for now, handle it after gender is determined
-          return;
-        }
-        const randomIndex = Math.floor(Math.random() * optionsArray.length);
-        const randomValue = optionsArray[randomIndex];
-        newSelections[key] = randomValue;
-        if (key === "gender") {
-          randomisedGender = randomValue;
+  const handleSelectionChange = (key: keyof SelectionState, value: string) => {
+    setSelectionStates((prev) => {
+      const newState = { ...prev, [key]: value };
+      if (key === "gender") {
+        newState.hair_style =
+          value === "Male"
+            ? promptOptions.hair_style_male[0]
+            : promptOptions.hair_style_female[0];
+        if (value !== "Male") {
+          newState.facial_hair = promptOptions.facial_hair[0]; // Reset facial hair if not male
         }
       }
+      return newState;
     });
+  };
 
-    // Handle facial_hair based on the randomised gender
-    if (randomisedGender === "Male") {
-      const facialHairOptions = promptOptions.facial_hair as string[];
-      const randomIndex = Math.floor(Math.random() * facialHairOptions.length);
-      newSelections["facial_hair"] = facialHairOptions[randomIndex];
+  const handleRandomise = () => {
+    const newSelections: Partial<SelectionState> = {};
+
+    // Randomise gender first
+    const randomGender =
+      promptOptions.gender[
+        Math.floor(Math.random() * promptOptions.gender.length)
+      ];
+    newSelections.gender = randomGender;
+
+    // Randomise other properties
+    newSelections.hair_color =
+      promptOptions.hair_color[
+        Math.floor(Math.random() * promptOptions.hair_color.length)
+      ];
+    newSelections.body_type =
+      promptOptions.body_type[
+        Math.floor(Math.random() * promptOptions.body_type.length)
+      ];
+    newSelections.age =
+      promptOptions.age[Math.floor(Math.random() * promptOptions.age.length)];
+    newSelections.expression =
+      promptOptions.expression[
+        Math.floor(Math.random() * promptOptions.expression.length)
+      ];
+    newSelections.background =
+      promptOptions.background[
+        Math.floor(Math.random() * promptOptions.background.length)
+      ];
+
+    // Handle conditional options
+    if (newSelections.gender === "Male") {
+      newSelections.hair_style =
+        promptOptions.hair_style_male[
+          Math.floor(Math.random() * promptOptions.hair_style_male.length)
+        ];
+      newSelections.facial_hair =
+        promptOptions.facial_hair[
+          Math.floor(Math.random() * promptOptions.facial_hair.length)
+        ];
     } else {
-      // If gender is not Male, set facial_hair to the default "None"
-      newSelections["facial_hair"] = promptOptions.facial_hair[0];
+      newSelections.hair_style =
+        promptOptions.hair_style_female[
+          Math.floor(Math.random() * promptOptions.hair_style_female.length)
+        ];
+      newSelections.facial_hair = promptOptions.facial_hair[0]; // "None"
     }
 
-    setSelectionStates(newSelections as Record<PromptOptionsKey, string>);
+    setSelectionStates(newSelections as SelectionState);
   };
 
   const handleReset = () => {
+    setSelectionStates(getInitialState());
+    setShowOutputModal(false);
     setGeneratedImageData(null);
     setError(null);
-    // Reset all selections to their default values
-    const initialStates: Record<string, string> = {};
-    (Object.keys(promptOptions) as Array<PromptOptionsKey>).forEach((key) => {
-      if (Array.isArray(promptOptions[key])) {
-        initialStates[key] = (promptOptions[key] as string[])[0];
-      }
-    });
-    setSelectionStates(initialStates);
-    setAspectRatio("1:1");
     setGeneratedPrompt("");
-    setShowOutputModal(false);
-
-    // Clear saved selections from localStorage
-    localStorage.removeItem('studioSelections');
-    localStorage.removeItem('studioAspectRatio');
-
+    localStorage.removeItem("studioSelections");
     setTimeout(() => {
       window.scrollTo({ top: 0, behavior: "smooth" });
     }, 100);
   };
 
-  // New function to just close the modal without resetting selections
   const handleCloseModal = () => {
+    setShowOutputModal(false);
     setGeneratedImageData(null);
     setError(null);
     setGeneratedPrompt("");
-    setShowOutputModal(false);
   };
 
   const handleDownload = () => {
     if (!generatedImageData) return;
-
     const link = document.createElement("a");
     link.href = generatedImageData;
     const mimeType = generatedImageData.split(":")[1].split(";")[0];
@@ -183,68 +199,98 @@ export function StudioInterface() {
     document.body.removeChild(link);
   };
 
+  const handleOpenImageInNewTab = async () => {
+    if (!generatedImageData) return;
+
+    try {
+      // Fetch the blob from the data URL
+      const response = await fetch(generatedImageData);
+      const blob = await response.blob();
+      
+      // Create an object URL from the blob
+      const blobUrl = URL.createObjectURL(blob);
+      
+      // Open the object URL in a new tab
+      const newWindow = window.open(blobUrl, "_blank");
+
+      if (newWindow) {
+        // Optional: Revoke the object URL when the new tab is closed to free up memory
+        newWindow.addEventListener('beforeunload', () => {
+          URL.revokeObjectURL(blobUrl);
+        });
+      } else {
+        // If popup was blocked, fall back to revoking immediately after a delay
+        URL.revokeObjectURL(blobUrl);
+      }
+    } catch (error) {
+      console.error("Error opening image in new tab:", error);
+      // Fallback for browsers that might have issues with fetch on data URLs
+      const newWindow = window.open();
+      if (newWindow) {
+        newWindow.document.write(
+          `<html><head><title>Generated Image</title></head><body style="margin:0; display:flex; justify-content:center; align-items:center; background-color:#222;"><img src="${generatedImageData}" style="max-width:100%; max-height:100vh;"></body></html>`
+        );
+        newWindow.document.close();
+      }
+    }
+  };
+
   const handleGenerate = async () => {
     setIsLoading(true);
     setError(null);
     setGeneratedImageData(null);
     setShowOutputModal(true);
 
-    // Construct the prompt from selections
-    let constructedPrompt = "";
     const {
-      pose_level,
-      camera_perspective,
       age,
-      ethnicity,
       gender,
-      skin_tone,
+      body_type,
       hair_style,
       hair_color,
       facial_hair,
-      pose,
-      hand_position,
       expression,
       background,
     } = selectionStates;
 
     let facialHairClause = "";
     if (gender === "Male" && facial_hair && facial_hair !== "None") {
-      facialHairClause = `, ${facial_hair.toLowerCase()} facial hair`;
-    } else if (gender === "Male" && hair_style === "Bald" && facial_hair && facial_hair !== "None") {
-      // Specific case for bald men with facial hair
       facialHairClause = `, with ${facial_hair.toLowerCase()} facial hair`;
-    } else if (gender === "Male" && facial_hair && facial_hair !== "None") {
-      facialHairClause = ` and ${facial_hair.toLowerCase()} facial hair`;
     }
 
+    let hairDescription =
+      hair_style === "Bald"
+        ? "a bald head"
+        : `${hair_style.toLowerCase()} ${hair_color.toLowerCase()} hair`;
 
-    // Adjust hair description for baldness
-    let hairDescription = "";
-    if (hair_style === "Bald") {
-      hairDescription = "a bald head";
-    } else {
-      hairDescription = `${hair_style.toLowerCase()} ${hair_color.toLowerCase()} hair`;
-    }
+    const backgroundDescriptions: { [key: string]: string } = {
+      "Studio Gray":
+        "Shot against a seamless, solid light gray background with bright, even studio lighting.",
+      "Studio White":
+        "Shot against a seamless, solid white background with bright, even studio lighting.",
+      "Outdoor Park":
+        "Photographed in a lush green park with natural, soft sunlight filtering through the trees, creating a gentle bokeh effect in the background.",
+      "Urban Street":
+        "Set on a bustling city street with a slightly blurred, dynamic background. The lighting is natural daylight with subtle reflections, creating a realistic urban atmosphere.",
+      "Modern Office":
+        "Inside a bright, modern office space with clean lines. The lighting is a mix of large window light and soft interior lights, with the background slightly out of focus.",
+      "Beach Sunset":
+        "On a sandy beach during sunset, with the warm, golden glow of the sun creating long, soft shadows. The ocean and sky have a beautiful, soft focus.",
+    };
 
-    constructedPrompt = `A ${pose_level?.toLowerCase()}, ${camera_perspective?.toLowerCase()} photo of a ${age?.toLowerCase()} ${ethnicity?.toLowerCase()} ${gender?.toLowerCase()} model with ${skin_tone?.toLowerCase()} skin, ${hairDescription}${facialHairClause}. The model is wearing plain, form-fitting under clothing suitable for catalog photography, posed in a ${pose?.toLowerCase()} with hands ${hand_position
-      ?.toLowerCase()
-      .replace("at sides", "at their sides")}. ${expression?.toLowerCase()} facial expression, set against a ${background?.toLowerCase()} background with professional studio lighting. High-resolution e-commerce catalog-style image.`;
+    const backgroundClause =
+      backgroundDescriptions[background] ||
+      backgroundDescriptions["Studio Gray"];
 
-    // Clean up potential double commas or leading/trailing commas/spaces if some values are empty, though with current setup most should be pre-filled.
-    constructedPrompt = constructedPrompt.replace(/,\s*,/g, ',').replace(/,\s*\./g, '.').trim();
+    const constructedPrompt = `A full-body, photorealistic photograph of a ${age.toLowerCase()} German ${gender.toLowerCase()} model with a ${body_type.toLowerCase()} build and Fair skin. The model has ${hairDescription}${facialHairClause}. The model is wearing a plain, form-fitting white t-shirt and neutral grey shorts. The model is wearing simple white sneakers. The model is standing in a standard front-facing neutral pose, with arms relaxed at their sides, ${backgroundClause} The facial expression is ${expression.toLowerCase()}.  The entire body, from head to toe, is visible in the frame. High-resolution, sharp focus, professional e-commerce catalogue image.`;
 
-
-    setGeneratedPrompt(constructedPrompt);
+    setGeneratedPrompt(constructedPrompt.trim());
 
     try {
       const response = await fetch("/api/generate", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          prompt: constructedPrompt,
-          aspectRatio,
+          prompt: constructedPrompt.trim(),
         }),
       });
 
@@ -269,17 +315,52 @@ export function StudioInterface() {
   };
 
   const isGenerateDisabled = () => {
-    if (!isMounted) return false; // Don't disable on server
+    if (!isMounted) return true;
+    return isLoading || Object.values(selectionStates).some((val) => !val);
+  };
 
-    // The existing logic
-    const hasAllSelections = (
-      Object.keys(promptOptions) as Array<PromptOptionsKey>
-    ).every((key) => {
-      if (key === "facial_hair" && selectionStates.gender !== "Male")
-        return true; // Skip facial hair if not male
-      return !!selectionStates[key];
-    });
-    return isLoading || !hasAllSelections;
+  const getHairStyleOptions = () => {
+    return selectionStates.gender === "Male"
+      ? promptOptions.hair_style_male
+      : promptOptions.hair_style_female;
+  };
+
+  const renderSelect = (key: keyof SelectionState) => {
+    let options: string[] = [];
+    if (key === "hair_style") {
+      options = getHairStyleOptions();
+    } else {
+      // This is a safe cast because we've handled the non-mappable keys
+      options =
+        promptOptions[key as Exclude<keyof SelectionState, "hair_style">] || [];
+    }
+
+    const isDisabled =
+      isLoading || (key === "facial_hair" && selectionStates.gender !== "Male");
+
+    return (
+      <div className="space-y-2" key={key}>
+        <label className="text-sm font-medium">{keyToLabel(key)}</label>
+        <Select
+          value={selectionStates[key]}
+          onValueChange={(value) => handleSelectionChange(key, value)}
+          disabled={isDisabled}
+        >
+          <SelectTrigger>
+            <SelectValue
+              placeholder={`Select ${keyToLabel(key).toLowerCase()}`}
+            />
+          </SelectTrigger>
+          <SelectContent>
+            {options.map((option) => (
+              <SelectItem key={option} value={option}>
+                {option}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+    );
   };
 
   return (
@@ -300,101 +381,10 @@ export function StudioInterface() {
                   Select character attributes to generate a model.
                 </p>
 
-                {/* --- Dynamic Selects for Character Attributes & Aspect Ratio --- */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4 mt-6">
-                  {(Object.keys(promptOptions) as Array<PromptOptionsKey>).map(
-                    (key) => {
-                      if (key === "facial_hair") {
-                        const isDisabled =
-                          isLoading || selectionStates.gender !== "Male";
-                        return (
-                          <div className="space-y-2" key={key}>
-                            <label className="text-sm font-medium">
-                              {keyToLabel(key)}
-                            </label>
-                            <Select
-                              value={selectionStates[key]}
-                              onValueChange={(value) =>
-                                handleSelectionChange(key, value)
-                              }
-                              disabled={isDisabled}
-                            >
-                              <SelectTrigger>
-                                <SelectValue
-                                  placeholder={`Select ${keyToLabel(
-                                    key
-                                  ).toLowerCase()}`}
-                                />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {promptOptions.facial_hair.map((option) => (
-                                  <SelectItem key={option} value={option}>
-                                    {option}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </div>
-                        );
-                      }
-                      const options = promptOptions[key] as string[];
-                      return (
-                        <div className="space-y-2" key={key}>
-                          <label className="text-sm font-medium">
-                            {keyToLabel(key)}
-                          </label>
-                          <Select
-                            value={selectionStates[key]}
-                            onValueChange={(value) =>
-                              handleSelectionChange(key, value)
-                            }
-                            disabled={isLoading}
-                          >
-                            <SelectTrigger>
-                              <SelectValue
-                                placeholder={`Select ${keyToLabel(
-                                  key
-                                ).toLowerCase()}`}
-                              />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {options.map((option) => (
-                                <SelectItem key={option} value={option}>
-                                  {option}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      );
-                    }
-                  )}
-                  {/* --- Aspect Ratio Select (Moved Here) --- */}
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Aspect Ratio</label>
-                    <Select
-                      value={aspectRatio}
-                      onValueChange={(value) => setAspectRatio(value)}
-                      disabled={isLoading}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select aspect ratio" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="1:1">Square (1:1)</SelectItem>
-                        <SelectItem value="16:9">Landscape (16:9)</SelectItem>
-                        <SelectItem value="9:16">Portrait (9:16)</SelectItem>
-                        <SelectItem value="4:3">Standard (4:3)</SelectItem>
-                        <SelectItem value="3:2">DSLR (3:2)</SelectItem>
-                        <SelectItem value="4:5">Portrait (4:5)</SelectItem>
-                        <SelectItem value="21:9">Ultrawide (21:9)</SelectItem>
-
-                      </SelectContent>
-                    </Select>
-                  </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mt-6">
+                  {dropdownOrder.map(renderSelect)}
                 </div>
 
-                {/* --- Generate Button --- */}
                 <div className="mt-6 flex justify-between items-center">
                   <div className="flex-1 flex justify-start gap-2">
                     <Button
@@ -419,7 +409,7 @@ export function StudioInterface() {
                   <div className="flex justify-center flex-1">
                     <Button
                       onClick={handleGenerate}
-                      disabled={isMounted ? isGenerateDisabled() : false}
+                      disabled={isGenerateDisabled()}
                       className="gap-2 w-full sm:w-auto"
                     >
                       {isLoading ? (
@@ -430,14 +420,11 @@ export function StudioInterface() {
                       {isLoading ? "Generating..." : "Generate Image"}
                     </Button>
                   </div>
-                  <div className="flex justify-end flex-1">
-                    {/* Reset button removed from here */}
-                  </div>
+                  <div className="flex justify-end flex-1" />
                 </div>
               </div>
             </motion.div>
 
-            {/* --- Output Area --- */}
             {showOutputModal && (
               <div className="fixed inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto">
                 <motion.div
@@ -445,15 +432,16 @@ export function StudioInterface() {
                   animate={{ opacity: 1, scale: 1, y: 0 }}
                   exit={{ opacity: 0, scale: 0.95, y: 20 }}
                   transition={{ duration: 0.3, ease: "easeOut" }}
-                  className="bg-card border border-border/40 rounded-xl shadow-lg flex flex-col w-full max-w-5xl relative m-4"
+                  className="bg-card border border-border/40 rounded-xl shadow-lg flex flex-col w-full max-w-6xl relative m-4"
                 >
-                  {/* Header */}
                   <div className="flex justify-between items-center p-5 border-b border-border/20">
-                    <h2 className="text-xl font-semibold text-foreground">Generated Model</h2>
+                    <h2 className="text-xl font-semibold text-foreground">
+                      Generated Model
+                    </h2>
                     <div className="flex items-center gap-3">
                       <Button
                         onClick={handleDownload}
-                        disabled={isMounted ? (!generatedImageData || isLoading) : false}
+                        disabled={!generatedImageData || isLoading}
                         variant="secondary"
                         className="flex items-center justify-center gap-2 px-4"
                         title="Download Image"
@@ -473,12 +461,9 @@ export function StudioInterface() {
                     </div>
                   </div>
 
-                  {/* Content */}
                   <div className="flex flex-col md:flex-row p-5 gap-5">
-                    {/* Image Section - Left Side */}
-                    <div className="md:w-2/3 flex flex-col">
+                    <div className="md:w-1/2 flex flex-col">
                       <div className="aspect-square md:aspect-auto md:h-[500px] rounded-lg overflow-hidden bg-muted/10 flex items-center justify-center">
-                        {/* Loading State */}
                         {isLoading && (
                           <div className="flex flex-col justify-center items-center h-full w-full">
                             <Loader2 className="h-8 w-8 animate-spin text-primary mb-3" />
@@ -487,28 +472,27 @@ export function StudioInterface() {
                             </span>
                           </div>
                         )}
-
-                        {/* Error State */}
                         {error && !isLoading && (
                           <div className="p-4 w-full max-w-md">
-                            <Alert variant="destructive" className="border-destructive/20">
+                            <Alert
+                              variant="destructive"
+                              className="border-destructive/20"
+                            >
                               <Terminal className="h-4 w-4" />
                               <AlertTitle>Generation Failed</AlertTitle>
                               <AlertDescription>{error}</AlertDescription>
                             </Alert>
                           </div>
                         )}
-
-                        {/* Success State - Display Image */}
                         {generatedImageData && !isLoading && !error && (
                           <img
                             src={generatedImageData}
                             alt={generatedPrompt || "Generated image"}
-                            className="h-full w-full object-contain"
+                            className="h-full w-full object-contain cursor-pointer"
+                            onClick={handleOpenImageInNewTab}
+                            title="Click to open image in new tab"
                           />
                         )}
-
-                        {/* Placeholder State */}
                         {!isLoading && !generatedImageData && !error && (
                           <div className="text-center p-6">
                             <span className="text-muted-foreground text-sm">
@@ -519,14 +503,16 @@ export function StudioInterface() {
                       </div>
                     </div>
 
-                    {/* Right Side Column - Prompt & Actions */}
-                    <div className="md:w-1/3 flex flex-col gap-4">
-                      {/* Prompt Section */}
+                    <div className="md:w-1/2 flex flex-col gap-4">
                       <div className="flex-grow">
-                        <h3 className="text-sm font-medium mb-2 text-muted-foreground">Generated Prompt</h3>
-                        <div className="bg-muted/30 rounded-md p-4 text-sm text-muted-foreground min-h-[300px] border border-border/10">
+                        <h3 className="text-sm font-medium mb-2 text-muted-foreground">
+                          Generated Prompt
+                        </h3>
+                        <div className="bg-muted/30 rounded-md p-4 text-sm text-muted-foreground min-h-[300px] border border-border/10 overflow-y-auto">
                           {generatedPrompt ? (
-                            <p className="text-justify">{generatedPrompt}</p>
+                            <p className="text-justify whitespace-pre-wrap">
+                              {generatedPrompt}
+                            </p>
                           ) : (
                             <div className="h-full flex items-center justify-center">
                               <span>Prompt will appear here</span>
@@ -535,9 +521,8 @@ export function StudioInterface() {
                         </div>
                       </div>
 
-                      {/* Action Button */}
                       <Button
-                        className="mt-auto w-full gap-2"
+                        className="mt-auto self-center gap-2"
                         size="lg"
                         variant="default"
                       >
