@@ -15,8 +15,6 @@ export const promptOptions = {
     "Medium",
     "Slicked Back",
     "Man Bun",
-    "Afro",
-    "Cornrows",
     "Bald",
   ],
   hair_style_female: [
@@ -26,8 +24,6 @@ export const promptOptions = {
     "Long",
     "Ponytail",
     "Bun",
-    "Braids",
-    "Afro",
     "Bald",
   ],
   facial_hair: [
@@ -41,11 +37,10 @@ export const promptOptions = {
   age: ["Young Adult", "Adult", "Middle-aged"],
   expression: ["Neutral", "Soft smile", "Serious"],
   background: [
-    "Studio Gray",
     "Studio White",
+    "Studio Grey",
     "Outdoor Park",
     "Urban Street",
-    "Modern Office",
     "Beach Sunset",
   ],
 };

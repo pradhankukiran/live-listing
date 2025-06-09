@@ -262,26 +262,34 @@ export function StudioInterface() {
         ? "a bald head"
         : `${hair_style.toLowerCase()} ${hair_color.toLowerCase()} hair`;
 
-    const backgroundDescriptions: { [key: string]: string } = {
-      "Studio Gray":
-        "Shot against a seamless, solid light gray background with bright, even studio lighting.",
-      "Studio White":
-        "Shot against a seamless, solid white background with bright, even studio lighting.",
-      "Outdoor Park":
-        "Photographed in a lush green park with natural, soft sunlight filtering through the trees, creating a gentle bokeh effect in the background.",
-      "Urban Street":
-        "Set on a bustling city street with a slightly blurred, dynamic background. The lighting is natural daylight with subtle reflections, creating a realistic urban atmosphere.",
-      "Modern Office":
-        "Inside a bright, modern office space with clean lines. The lighting is a mix of large window light and soft interior lights, with the background slightly out of focus.",
-      "Beach Sunset":
-        "On a sandy beach during sunset, with the warm, golden glow of the sun creating long, soft shadows. The ocean and sky have a beautiful, soft focus.",
-    };
+    let backgroundClause = "";
+    switch (background) {
+      case "Studio White":
+        backgroundClause =
+          "shot against a seamless, solid white background with bright, even studio lighting.";
+        break;
+      case "Studio Grey":
+        backgroundClause =
+          "shot against a seamless, solid light gray background with bright, even studio lighting.";
+        break;
+      case "Outdoor Park":
+        backgroundClause =
+          "shot against a tranquil park scene with lush greenery and soft, natural sunlight, creating a fresh and calm mood.";
+        break;
+      case "Urban Street":
+        backgroundClause =
+          "shot against a dynamic urban street scene with blurred city lights and modern architecture, creating an energetic and sophisticated mood.";
+        break;
+      case "Beach Sunset":
+        backgroundClause =
+          "shot against a serene beach at sunset with dramatic golden hour lighting and waves in the background, creating a romantic and peaceful mood.";
+        break;
+      default:
+        backgroundClause =
+          "shot against a seamless, solid light gray background with bright, even studio lighting.";
+    }
 
-    const backgroundClause =
-      backgroundDescriptions[background] ||
-      backgroundDescriptions["Studio Gray"];
-
-    const constructedPrompt = `A full-body, photorealistic photograph of a ${age.toLowerCase()} German ${gender.toLowerCase()} model with a ${body_type.toLowerCase()} build and Fair skin. The model has ${hairDescription}${facialHairClause}. The model is wearing a plain, form-fitting white t-shirt and neutral grey shorts. The model is wearing simple white sneakers. The model is standing in a standard front-facing neutral pose, with arms relaxed at their sides, ${backgroundClause} The facial expression is ${expression.toLowerCase()}.  The entire body, from head to toe, is visible in the frame. High-resolution, sharp focus, professional e-commerce catalogue image.`;
+    const constructedPrompt = `A full-body, photorealistic photograph of a ${age.toLowerCase()} German ${gender.toLowerCase()} model with a ${body_type.toLowerCase()} build and fair skin. The model has ${hairDescription}${facialHairClause}. The model is wearing a plain, form-fitting white t-shirt and neutral grey shorts. The model is wearing simple white sneakers. The model is standing in a standard front-facing neutral pose, with arms relaxed at their sides, ${backgroundClause} The facial expression is ${expression.toLowerCase()}.  The entire body, from head to toe, is visible in the frame. High-resolution, sharp focus, professional e-commerce catalogue image.`;
 
     setGeneratedPrompt(constructedPrompt.trim());
 
@@ -332,7 +340,7 @@ export function StudioInterface() {
     } else {
       // This is a safe cast because we've handled the non-mappable keys
       options =
-        promptOptions[key as Exclude<keyof SelectionState, "hair_style">] || [];
+        promptOptions[key as keyof typeof promptOptions] || [];
     }
 
     const isDisabled =
@@ -376,7 +384,18 @@ export function StudioInterface() {
               className="w-full max-w-6xl bg-card rounded-lg shadow-lg overflow-hidden flex flex-col p-6 space-y-6 mt-6 mb-6 min-h-[600px]"
             >
               <div>
-                <h2 className="text-2xl font-bold mb-2">Create New Model</h2>
+                <div className="flex justify-between items-center mb-2">
+                  <h2 className="text-2xl font-bold">Create New Model</h2>
+                  <Button
+                    onClick={handleReset}
+                    disabled={isMounted && isLoading}
+                    variant="outline"
+                    size="icon"
+                    title="Reset to defaults"
+                  >
+                    <RefreshCw className="h-4 w-4" />
+                  </Button>
+                </div>
                 <p className="text-muted-foreground mb-4">
                   Select character attributes to generate a model.
                 </p>
@@ -385,27 +404,8 @@ export function StudioInterface() {
                   {dropdownOrder.map(renderSelect)}
                 </div>
 
-                <div className="mt-6 flex justify-between items-center">
-                  <div className="flex-1 flex justify-start gap-2">
-                    <Button
-                      onClick={handleRandomise}
-                      disabled={isMounted && isLoading}
-                      variant="outline"
-                      className="gap-2"
-                    >
-                      <Box className="h-4 w-4" />
-                      Randomise
-                    </Button>
-                    <Button
-                      onClick={handleReset}
-                      disabled={isMounted && isLoading}
-                      variant="outline"
-                      size="icon"
-                      title="Reset to defaults"
-                    >
-                      <RefreshCw className="h-4 w-4" />
-                    </Button>
-                  </div>
+                <div className="mt-20 flex justify-between items-center">
+                  <div className="flex-1" />
                   <div className="flex justify-center flex-1">
                     <Button
                       onClick={handleGenerate}
@@ -420,7 +420,17 @@ export function StudioInterface() {
                       {isLoading ? "Generating..." : "Generate Image"}
                     </Button>
                   </div>
-                  <div className="flex justify-end flex-1" />
+                  <div className="flex-1 flex justify-end">
+                    <Button
+                      onClick={handleRandomise}
+                      disabled={isMounted && isLoading}
+                      variant="outline"
+                      className="gap-2"
+                    >
+                      <Box className="h-4 w-4" />
+                      Randomise
+                    </Button>
+                  </div>
                 </div>
               </div>
             </motion.div>
@@ -521,14 +531,29 @@ export function StudioInterface() {
                         </div>
                       </div>
 
-                      <Button
-                        className="mt-auto self-center gap-2"
-                        size="lg"
-                        variant="default"
-                      >
-                        <Box className="h-4 w-4" />
-                        Customize Clothing
-                      </Button>
+                      <div className="mt-auto flex justify-center gap-4">
+                        <Button
+                          onClick={handleGenerate}
+                          disabled={isLoading || !generatedPrompt}
+                          variant="outline"
+                          size="lg"
+                          className="gap-2"
+                          title="Generate a new image with the same prompt"
+                        >
+                          <RefreshCw className="h-4 w-4" />
+                          Retry
+                        </Button>
+                        <Button
+                          className="gap-2"
+                          size="lg"
+                          variant="default"
+                          disabled={isLoading || !generatedImageData}
+                          title="Customize clothing for the generated model"
+                        >
+                          <Box className="h-4 w-4" />
+                          Customize Clothing
+                        </Button>
+                      </div>
                     </div>
                   </div>
                 </motion.div>
