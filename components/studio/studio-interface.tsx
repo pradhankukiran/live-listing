@@ -14,6 +14,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { SharedNavbar } from "@/components/shared/shared-navbar";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -58,6 +59,8 @@ const dropdownOrder: (keyof SelectionState)[] = [
 
 export function StudioInterface() {
   const [isMounted, setIsMounted] = useState(false);
+
+  const [selectedCategory, setSelectedCategory] = useState("clothing");
 
   const getInitialState = (): SelectionState => {
     return {
@@ -289,7 +292,12 @@ export function StudioInterface() {
           "shot against a seamless, solid light gray background with bright, even studio lighting.";
     }
 
-    const constructedPrompt = `A full-body, photorealistic photograph of a ${age.toLowerCase()} German ${gender.toLowerCase()} model with a ${body_type.toLowerCase()} build and fair skin. The model has ${hairDescription}${facialHairClause}. The model is wearing a plain, form-fitting white t-shirt and neutral grey shorts. The model is wearing simple white sneakers. The model is standing in a standard front-facing neutral pose, with arms relaxed at their sides, ${backgroundClause} The facial expression is ${expression.toLowerCase()}.  The entire body, from head to toe, is visible in the frame. High-resolution, sharp focus, professional e-commerce catalogue image.`;
+    let constructedPrompt = "";
+    if (selectedCategory === "headwear") {
+      constructedPrompt = `A high-resolution, front-facing photorealistic portrait of a ${age.toLowerCase()} German ${gender.toLowerCase()} model with a ${body_type.toLowerCase()} build and fair skin. The model has ${hairDescription}${facialHairClause}, with their head upright and directly facing the camera in a neutral pose. The model is wearing a plain, form-fitting white t-shirt. The background is ${backgroundClause}. The facial expression is ${expression.toLowerCase()}. The model's hair is styled to be compatible with headwear. No headwear or accessories are present. This is a professional e-commerce catalog photo intended for virtual headwear try-on. Sharp focus, evenly lit, neutral background.`;
+    } else {
+      constructedPrompt = `A full-body, photorealistic photograph of a ${age.toLowerCase()} German ${gender.toLowerCase()} model with a ${body_type.toLowerCase()} build and fair skin. The model has ${hairDescription}${facialHairClause} and is wearing a plain, form-fitting white t-shirt and neutral grey shorts with simple white sneakers. The model is standing in a standard front-facing neutral pose, with arms relaxed at their sides, ${backgroundClause} The facial expression is ${expression.toLowerCase()}. The entire body, from head to toe, is visible in the frame. High-resolution, sharp focus, professional e-commerce catalogue image.`;
+    }
 
     setGeneratedPrompt(constructedPrompt.trim());
 
@@ -399,6 +407,48 @@ export function StudioInterface() {
                 <p className="text-muted-foreground mb-4">
                   Select character attributes to generate a model.
                 </p>
+
+                <div className="flex items-center justify-center space-x-6 mb-6">
+                  <div className="flex items-center space-x-2">
+                    <Checkbox
+                      id="clothing"
+                      checked={selectedCategory === "clothing"}
+                      onCheckedChange={() => setSelectedCategory("clothing")}
+                    />
+                    <label
+                      htmlFor="clothing"
+                      className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                    >
+                      Clothing
+                    </label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Checkbox
+                      id="headwear"
+                      checked={selectedCategory === "headwear"}
+                      onCheckedChange={() => setSelectedCategory("headwear")}
+                    />
+                    <label
+                      htmlFor="headwear"
+                      className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                    >
+                      Headwear
+                    </label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Checkbox
+                      id="jewelry"
+                      checked={selectedCategory === "jewelry"}
+                      onCheckedChange={() => setSelectedCategory("jewelry")}
+                    />
+                    <label
+                      htmlFor="jewelry"
+                      className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                    >
+                      Jewelry
+                    </label>
+                  </div>
+                </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mt-6">
                   {dropdownOrder.map(renderSelect)}
