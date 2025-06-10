@@ -33,7 +33,7 @@ export const promptOptions = {
     "Mustache",
     "Short Beard",
   ],
-  body_type: ["Slim", "Athletic", "Average", "Plus-size"],
+  body_type: ["Slim", "Athletic", "Average"],
   age: ["Young Adult", "Adult", "Middle-aged"],
   expression: ["Neutral", "Soft smile", "Serious"],
   background: [
