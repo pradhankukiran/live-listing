@@ -1,83 +1,69 @@
 import Replicate from 'replicate';
 import { NextRequest, NextResponse } from 'next/server';
-// import mime from 'mime'; // Keep if needed for other purposes, otherwise remove
 
-// Force this route to be dynamic
 export const dynamic = 'force-dynamic';
 
-// Updated model to Black-Forest-Labs Flux Kontext Pro
-const REPLICATE_MODEL = "black-forest-labs/flux-kontext-pro";
+const REPLICATE_MODEL = 'bytedance/seedream-4';
 const REPLICATE_API_TOKEN = process.env.REPLICATE_API_TOKEN;
 
 if (!REPLICATE_API_TOKEN) {
   throw new Error('Missing REPLICATE_API_TOKEN environment variable.');
 }
 
-// Initialize Replicate client
 const replicate = new Replicate({
   auth: REPLICATE_API_TOKEN,
 });
 
+const SEEDREAM_SIZES = new Set(['1K', '2K', '4K', 'custom']);
+const SEEDREAM_ASPECT_RATIOS = new Set([
+  'match_input_image',
+  '1:1',
+  '4:3',
+  '3:4',
+  '16:9',
+  '9:16',
+  '3:2',
+  '2:3',
+  '21:9',
+]);
+const SEQUENTIAL_GENERATION_MODES = new Set(['disabled', 'auto']);
+const DEFAULT_IMAGE_MIME = 'image/jpeg';
+
+type GenerateRequestPayload = {
+  prompt: string;
+  size?: string;
+  aspectRatio?: string;
+  sequentialImageGeneration?: string;
+  maxImages?: number;
+  width?: number;
+  height?: number;
+  imageInput?: string[] | string | null;
+};
+
 export async function POST(request: NextRequest) {
   try {
-    const { prompt, aspectRatio, safetyTolerance, seed, inputImage, outputFormat } = await request.json();
+    const body = (await request.json()) as GenerateRequestPayload;
+    const input = buildSeedreamInput(body);
 
-    if (!prompt) {
-      return NextResponse.json({ error: 'Prompt is required' }, { status: 400 });
-    }
+    console.log('Sending prompt to Replicate (Seedream 4):', input.prompt);
 
-    console.log("Sending prompt to Replicate (Flux Kontext Pro):", prompt);
-
-    const input: any = {
-      prompt: prompt,
-      aspect_ratio: aspectRatio || "1:1", // Use provided aspect ratio or default
-      seed: 0,  // Default seed to 0 for reproducible generation
-      safety_tolerance: 6,  // Default safety tolerance to 6 (most permissive)
-    };
-
-    // Add optional parameters if provided
-    if (seed !== undefined) {
-      input.seed = seed;
-    }
-    
-    if (inputImage) {
-      input.input_image = inputImage;
-    }
-    
-    // Override default safety tolerance if explicitly provided
-    if (safetyTolerance !== undefined) {
-      const tolerance = Number(safetyTolerance);
-      if (!isNaN(tolerance) && tolerance >= 0 && tolerance <= 6) {
-        input.safety_tolerance = tolerance;
-      }
-    }
-    
-    // Add output format if provided
-    if (outputFormat && (outputFormat === "jpg" || outputFormat === "png")) {
-      input.output_format = outputFormat;
-    }
-
-    // Run the model
     const outputFromRun: any = await replicate.run(REPLICATE_MODEL, { input });
 
-    // Check if the output is an async iterator (common for streaming models)
     if (outputFromRun && typeof outputFromRun[Symbol.asyncIterator] === 'function') {
-      console.log("Received a stream from Replicate. Consuming...");
+      console.log('Received a stream from Replicate. Consuming...');
       const collectedChunks: Uint8Array[] = [];
       let isBinaryStream = false;
       let firstNonBinaryEvent: any = null;
 
       for await (const event of outputFromRun as AsyncIterable<any>) {
-        if (event instanceof Uint8Array) {
+        if (event instanceof Uint8Array || Buffer.isBuffer(event)) {
           isBinaryStream = true;
-          collectedChunks.push(event);
+          collectedChunks.push(event instanceof Uint8Array ? event : Buffer.from(event));
         } else {
-          // If we see a non-binary event first, or after some binary data, capture it.
-          // This could be a URL or structured data if the model doesn't stream pure binary.
           if (!isBinaryStream && !firstNonBinaryEvent) {
             firstNonBinaryEvent = event;
           }
-          console.log("Stream event (non-binary or mixed):", event);
+          console.log('Stream event (non-binary or mixed):', event);
         }
       }
 
@@ -91,68 +77,241 @@ export async function POST(request: NextRequest) {
           offset += chunk.length;
         }
         const base64Data = imageBuffer.toString('base64');
-        // Default to image/png or use the specified output format
-        const mimeType = input.output_format === "jpg" ? "image/jpeg" : "image/png";
-        console.log(`Successfully converted streamed binary data to base64 (${mimeType}).`);
-        return NextResponse.json({ imageData: base64Data, mimeType: mimeType });
-      } else if (firstNonBinaryEvent) {
-        // The stream yielded something other than pure binary data first.
-        // Let's try to process this as if it were the direct output.
-        console.log("Stream yielded non-binary data first, processing as direct output:", firstNonBinaryEvent);
-        // This falls through to the direct output handling below.
-        // We re-assign outputFromRun to simplify the next stage.
-        return processDirectReplicateOutput(firstNonBinaryEvent, input.output_format);
-      } else {
-        console.error("Stream finished but no usable image data (binary or other) was collected.");
-        throw new Error("Image generation failed: Stream did not yield usable data.");
+        console.log('Successfully converted streamed binary data to base64.');
+        return NextResponse.json({ imageData: base64Data, mimeType: DEFAULT_IMAGE_MIME });
       }
-    } else {
-      // Handle non-streaming direct output from Replicate
-      console.log("Received non-stream (direct) output from Replicate:", outputFromRun);
-      return processDirectReplicateOutput(outputFromRun, input.output_format);
+
+      if (firstNonBinaryEvent) {
+        console.log('Stream yielded non-binary data first, processing as direct output:', firstNonBinaryEvent);
+        return respondWithOutput(firstNonBinaryEvent);
+      }
+
+      console.error('Stream finished but no usable image data (binary or other) was collected.');
+      throw new Error('Image generation failed: Stream did not yield usable data.');
     }
 
+    console.log('Received non-stream (direct) output from Replicate:', outputFromRun);
+    return respondWithOutput(outputFromRun);
   } catch (error: any) {
     console.error('Error generating image with Replicate:', error);
     const errorMessage = error.response?.data?.detail || error.message || 'Failed to generate image';
     return NextResponse.json(
-        { error: errorMessage },
-        { status: 500 }
+      { error: errorMessage },
+      { status: 500 }
     );
   }
 }
 
-async function processDirectReplicateOutput(directOutput: any, outputFormat?: string) {
-  // This function handles cases where output is a URL, an array of URLs,
-  // or potentially other structures that might resolve to a URL.
-
-  let imageUrlToFetch: string | null = null;
-
-  if (typeof directOutput === 'string' && directOutput.startsWith('http')) {
-    imageUrlToFetch = directOutput;
-    console.log("Processing direct image URL:", imageUrlToFetch);
-  } else if (Array.isArray(directOutput) && directOutput.length > 0 && typeof directOutput[0] === 'string' && directOutput[0].startsWith('http')) {
-    imageUrlToFetch = directOutput[0];
-    console.log("Processing direct array of image URLs, taking the first:", imageUrlToFetch);
+function buildSeedreamInput(body: GenerateRequestPayload) {
+  const prompt = (body.prompt ?? '').trim();
+  if (!prompt) {
+    throw new Error('Prompt is required');
   }
-  // Add more checks here if Replicate models return URLs in other structures, e.g., { url: "..." }
 
-  if (imageUrlToFetch) {
-    const imageResponse = await fetch(imageUrlToFetch);
-    if (!imageResponse.ok) {
-      const errorText = await imageResponse.text();
-      console.error(`Failed to fetch image from URL: ${imageUrlToFetch}. Status: ${imageResponse.status}. Body: ${errorText}`);
-      throw new Error(`Failed to fetch image from URL: ${imageUrlToFetch}. Status: ${imageResponse.status}`);
+  const input: Record<string, any> = { prompt };
+
+  const size = normaliseSize(body.size);
+  input.size = size;
+
+  if (size === 'custom') {
+    const width = clampToInt(body.width, 1024, 4096);
+    const height = clampToInt(body.height, 1024, 4096);
+
+    if (width === undefined || height === undefined) {
+      throw new Error('Custom size requires width and height between 1024 and 4096.');
     }
-    const imageBuffer = await imageResponse.arrayBuffer();
-    const base64Data = Buffer.from(imageBuffer).toString('base64');
-    // Use content-type from response or determine based on output format
-    const mimeType = imageResponse.headers.get('content-type') || 
-                     (outputFormat === "jpg" ? "image/jpeg" : "image/png");
-    console.log(`Successfully fetched and converted image URL to base64 (${mimeType}).`);
-    return NextResponse.json({ imageData: base64Data, mimeType: mimeType });
+
+    input.width = width;
+    input.height = height;
   } else {
-    console.error("Replicate direct output was not a recognized image URL or array of URLs. Output:", directOutput);
-    throw new Error("Image generation failed: Model did not return a usable image URL directly.");
+    const aspectRatio = normaliseAspectRatio(body.aspectRatio);
+    if (aspectRatio) {
+      input.aspect_ratio = aspectRatio;
+    }
   }
-} 
+
+  const sequentialMode = normaliseSequentialMode(body.sequentialImageGeneration);
+  input.sequential_image_generation = sequentialMode;
+
+  if (sequentialMode === 'auto') {
+    input.max_images = clampToInt(body.maxImages, 1, 15) ?? 1;
+  } else {
+    input.max_images = 1;
+  }
+
+  const imageInput = normaliseImageInput(body.imageInput);
+  if (imageInput) {
+    input.image_input = imageInput;
+  }
+
+  return input;
+}
+
+function normaliseSize(value: unknown): '1K' | '2K' | '4K' | 'custom' {
+  const requested = typeof value === 'string' ? value.trim() : '';
+  if (SEEDREAM_SIZES.has(requested)) {
+    return requested as '1K' | '2K' | '4K' | 'custom';
+  }
+  return '2K';
+}
+
+function normaliseAspectRatio(value: unknown) {
+  const requested = typeof value === 'string' ? value.trim() : '';
+  if (SEEDREAM_ASPECT_RATIOS.has(requested)) {
+    return requested;
+  }
+  return 'match_input_image';
+}
+
+function normaliseSequentialMode(value: unknown): 'disabled' | 'auto' {
+  const requested = typeof value === 'string' ? value.trim() : '';
+  if (SEQUENTIAL_GENERATION_MODES.has(requested)) {
+    return requested as 'disabled' | 'auto';
+  }
+  return 'disabled';
+}
+
+function normaliseImageInput(value: unknown) {
+  if (Array.isArray(value)) {
+    const urls = value.filter((item) => typeof item === 'string' && item.trim()).map((item) => item.trim());
+    return urls.length > 0 ? urls : undefined;
+  }
+
+  if (typeof value === 'string' && value.trim()) {
+    return [value.trim()];
+  }
+
+  return undefined;
+}
+
+function clampToInt(value: unknown, min: number, max: number) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return undefined;
+  }
+  const rounded = Math.floor(parsed);
+  if (rounded < min || rounded > max) {
+    return undefined;
+  }
+  return rounded;
+}
+
+async function respondWithOutput(rawOutput: any) {
+  const payload = await extractImagePayload(rawOutput);
+  return NextResponse.json(payload);
+}
+
+
+function isReadableStream(value: unknown): value is ReadableStream<Uint8Array> {
+  return typeof value === 'object' && value !== null && typeof (value as any).getReader === 'function';
+}
+
+async function readReadableStream(stream: ReadableStream<Uint8Array>) {
+  const reader = stream.getReader();
+  const chunks: Buffer[] = [];
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) {
+      break;
+    }
+    if (value) {
+      chunks.push(Buffer.from(value));
+    }
+  }
+
+  return Buffer.concat(chunks);
+}
+
+async function extractImagePayload(rawOutput: any) {
+  if (rawOutput === null || rawOutput === undefined) {
+    throw new Error('Image generation failed: Model returned no output.');
+  }
+
+  const items = Array.isArray(rawOutput) ? rawOutput : [rawOutput];
+  const firstItem = items.find((item) => item !== undefined && item !== null);
+
+  if (!firstItem) {
+    throw new Error('Image generation failed: Model returned no output.');
+  }
+
+  if (typeof firstItem === 'string') {
+    if (firstItem.startsWith('data:')) {
+      const commaIndex = firstItem.indexOf(',');
+      if (commaIndex !== -1) {
+        const header = firstItem.slice(5, commaIndex);
+        const mimeMatch = header.split(';')[0] || DEFAULT_IMAGE_MIME;
+        const base64Data = firstItem.slice(commaIndex + 1);
+        return { imageData: base64Data, mimeType: mimeMatch || DEFAULT_IMAGE_MIME };
+      }
+    }
+
+    if (firstItem.startsWith('http')) {
+      return downloadImageAsBase64(firstItem, DEFAULT_IMAGE_MIME);
+    }
+  }
+
+  if (Buffer.isBuffer(firstItem)) {
+    return { imageData: firstItem.toString('base64'), mimeType: DEFAULT_IMAGE_MIME };
+  }
+
+  if (firstItem instanceof Uint8Array) {
+    return { imageData: Buffer.from(firstItem).toString('base64'), mimeType: DEFAULT_IMAGE_MIME };
+  }
+
+  if (firstItem instanceof ArrayBuffer) {
+    return { imageData: Buffer.from(firstItem).toString('base64'), mimeType: DEFAULT_IMAGE_MIME };
+  }
+
+  if (typeof firstItem === 'object') {
+    const item = firstItem as any;
+
+    if (isReadableStream(item)) {
+      const buffer = await readReadableStream(item);
+      return { imageData: buffer.toString('base64'), mimeType: DEFAULT_IMAGE_MIME };
+    }
+
+    if (typeof item.url === 'function') {
+      const url = await item.url();
+      if (typeof url === 'string' && url.startsWith('http')) {
+        return downloadImageAsBase64(url, DEFAULT_IMAGE_MIME);
+      }
+    }
+
+    if (typeof item.url === 'string' && item.url.startsWith('http')) {
+      return downloadImageAsBase64(item.url, DEFAULT_IMAGE_MIME);
+    }
+
+    if (typeof item.base64 === 'string') {
+      const mimeType = typeof item.mime_type === 'string' ? item.mime_type : DEFAULT_IMAGE_MIME;
+      return { imageData: item.base64, mimeType };
+    }
+
+    if (Array.isArray(item.data)) {
+      try {
+        const buffer = Buffer.from(item.data);
+        return { imageData: buffer.toString('base64'), mimeType: DEFAULT_IMAGE_MIME };
+      } catch (error) {
+        console.warn('Failed to convert array data to buffer:', error);
+      }
+    }
+  }
+
+  throw new Error('Image generation failed: Model did not return a usable image.');
+}
+
+async function downloadImageAsBase64(url: string, fallbackMime: string) {
+  const imageResponse = await fetch(url);
+  if (!imageResponse.ok) {
+    const errorText = await imageResponse.text();
+    console.error(`Failed to fetch image from URL: ${url}. Status: ${imageResponse.status}. Body: ${errorText}`);
+    throw new Error(`Failed to fetch image from URL: ${url}. Status: ${imageResponse.status}`);
+  }
+  const imageBuffer = await imageResponse.arrayBuffer();
+  const mimeType = imageResponse.headers.get('content-type') || fallbackMime;
+  console.log('Successfully fetched and converted image URL to base64.');
+  return {
+    imageData: Buffer.from(imageBuffer).toString('base64'),
+    mimeType,
+  };
+}

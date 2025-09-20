@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Wand2,
@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { SharedNavbar } from "@/components/shared/shared-navbar";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -22,6 +23,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import { promptOptions } from "@/lib/prompt-options";
 
 type SelectionState = {
@@ -34,6 +36,54 @@ type SelectionState = {
   expression: string;
   background: string;
 };
+
+type SizeOption = '1K' | '2K' | '4K' | 'custom';
+const sizeOptions: SizeOption[] = ['1K', '2K', '4K', 'custom'];
+
+type AspectRatioOption =
+  | 'match_input_image'
+  | '1:1'
+  | '4:3'
+  | '3:4'
+  | '16:9'
+  | '9:16'
+  | '3:2'
+  | '2:3'
+  | '21:9';
+const aspectRatioOptions: AspectRatioOption[] = [
+  'match_input_image',
+  '1:1',
+  '4:3',
+  '3:4',
+  '16:9',
+  '9:16',
+  '3:2',
+  '2:3',
+  '21:9',
+];
+
+type SequentialMode = 'disabled' | 'auto';
+const sequentialGenerationOptions: SequentialMode[] = ['disabled', 'auto'];
+
+type ModelSettings = {
+  size: SizeOption;
+  aspectRatio: AspectRatioOption;
+  sequentialImageGeneration: SequentialMode;
+  maxImages: number;
+  width: string;
+  height: string;
+  imageInput: string;
+};
+
+const getDefaultModelSettings = (): ModelSettings => ({
+  size: '2K',
+  aspectRatio: 'match_input_image',
+  sequentialImageGeneration: 'disabled',
+  maxImages: 1,
+  width: '2048',
+  height: '2048',
+  imageInput: '',
+});
 
 // Helper function to capitalize first letter for display
 const capitalizeFirstLetter = (string: string) => {
@@ -61,6 +111,39 @@ export function StudioInterface() {
   const [isMounted, setIsMounted] = useState(false);
 
   const [selectedCategory, setSelectedCategory] = useState("clothing");
+
+  const [modelSettings, setModelSettings] = useState<ModelSettings>(getDefaultModelSettings());
+
+  const updateModelSettings = (updates: Partial<ModelSettings>) => {
+    setModelSettings((prev) => ({ ...prev, ...updates }));
+  };
+
+  const handleSizeChange = (value: SizeOption) => {
+    setModelSettings((prev) => {
+      const next = { ...prev, size: value };
+      if (value !== 'custom') {
+        const defaults = getDefaultModelSettings();
+        next.width = defaults.width;
+        next.height = defaults.height;
+      }
+      return next;
+    });
+  };
+
+  const parseDimension = (value: string) => {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) {
+      return Number.NaN;
+    }
+    return Math.floor(parsed);
+  };
+
+  const parseImageInputList = (value: string) =>
+    value
+      .split(/[\r\n,]+/)
+      .map((item) => item.trim())
+      .filter(Boolean);
+
 
   const getInitialState = (): SelectionState => {
     return {
@@ -173,6 +256,7 @@ export function StudioInterface() {
 
   const handleReset = () => {
     setSelectionStates(getInitialState());
+    setModelSettings(getDefaultModelSettings());
     setShowOutputModal(false);
     setGeneratedImageData(null);
     setError(null);
@@ -299,15 +383,37 @@ export function StudioInterface() {
       constructedPrompt = `A full-body, photorealistic photograph of a ${age.toLowerCase()} German ${gender.toLowerCase()} model with a ${body_type.toLowerCase()} build and fair skin. The model has ${hairDescription}${facialHairClause} and is wearing a plain, form-fitting white t-shirt and neutral grey shorts with simple white sneakers. The model is standing in a standard front-facing neutral pose, with arms relaxed at their sides, ${backgroundClause} The facial expression is ${expression.toLowerCase()}. The entire body, from head to toe, is visible in the frame. High-resolution, sharp focus, professional e-commerce catalogue image.`;
     }
 
-    setGeneratedPrompt(constructedPrompt.trim());
+    const trimmedPrompt = constructedPrompt.trim();
+    setGeneratedPrompt(trimmedPrompt);
+
+    const widthValue = parseDimension(modelSettings.width);
+    const heightValue = parseDimension(modelSettings.height);
+    const imageInputs = parseImageInputList(modelSettings.imageInput);
+    const maxImages = Math.min(Math.max(Math.floor(modelSettings.maxImages || 1), 1), 15);
+
+    const requestPayload: Record<string, unknown> = {
+      prompt: trimmedPrompt,
+      size: modelSettings.size,
+      aspectRatio: modelSettings.aspectRatio,
+      sequentialImageGeneration: modelSettings.sequentialImageGeneration,
+      maxImages,
+    };
+
+    if (modelSettings.size === 'custom' && Number.isFinite(widthValue) && Number.isFinite(heightValue)) {
+      requestPayload.width = widthValue;
+      requestPayload.height = heightValue;
+    }
+
+    const limitedImageInputs = imageInputs.slice(0, 10);
+    if (limitedImageInputs.length > 0) {
+      requestPayload.imageInput = limitedImageInputs;
+    }
 
     try {
       const response = await fetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          prompt: constructedPrompt.trim(),
-        }),
+        body: JSON.stringify(requestPayload),
       });
 
       const result = await response.json();
@@ -330,9 +436,36 @@ export function StudioInterface() {
     }
   };
 
+  const isModelSettingsInvalid = () => {
+    if (modelSettings.size === 'custom') {
+      const widthValue = parseDimension(modelSettings.width);
+      const heightValue = parseDimension(modelSettings.height);
+      if (!Number.isFinite(widthValue) || widthValue < 1024 || widthValue > 4096) {
+        return true;
+      }
+      if (!Number.isFinite(heightValue) || heightValue < 1024 || heightValue > 4096) {
+        return true;
+      }
+    }
+
+    if (modelSettings.sequentialImageGeneration === 'auto') {
+      if (!Number.isFinite(modelSettings.maxImages) || modelSettings.maxImages < 1 || modelSettings.maxImages > 15) {
+        return true;
+      }
+    }
+
+    if (parseImageInputList(modelSettings.imageInput).length > 10) {
+      return true;
+    }
+
+    return false;
+  };
+
   const isGenerateDisabled = () => {
     if (!isMounted) return true;
-    return isLoading || Object.values(selectionStates).some((val) => !val);
+    if (isLoading) return true;
+    if (Object.values(selectionStates).some((val) => !val)) return true;
+    return isModelSettingsInvalid();
   };
 
   const getHairStyleOptions = () => {
@@ -447,6 +580,147 @@ export function StudioInterface() {
                     >
                       Jewelry
                     </label>
+                  </div>
+                </div>
+
+                <div className="mt-10 space-y-6">
+                  <div>
+                    <h3 className="text-lg font-semibold">Seedream 4 Settings</h3>
+                    <p className="text-sm text-muted-foreground">
+                      Adjust generation options for the Seedream 4 model.
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Size</label>
+                      <Select
+                        value={modelSettings.size}
+                        onValueChange={(value) => handleSizeChange(value as SizeOption)}
+                        disabled={isLoading}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select size" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {sizeOptions.map((option) => (
+                            <SelectItem key={option} value={option}>
+                              {option}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Aspect Ratio</label>
+                      <Select
+                        value={modelSettings.aspectRatio}
+                        onValueChange={(value) =>
+                          updateModelSettings({ aspectRatio: value as AspectRatioOption })
+                        }
+                        disabled={isLoading || modelSettings.size === 'custom'}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select aspect ratio" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {aspectRatioOptions.map((option) => (
+                            <SelectItem key={option} value={option}>
+                              {option}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Sequential Generation</label>
+                      <Select
+                        value={modelSettings.sequentialImageGeneration}
+                        onValueChange={(value) =>
+                          setModelSettings((prev) => ({
+                            ...prev,
+                            sequentialImageGeneration: value as SequentialMode,
+                            maxImages: value === 'auto'
+                              ? Math.min(Math.max(prev.maxImages, 1), 15)
+                              : 1,
+                          }))
+                        }
+                        disabled={isLoading}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select mode" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {sequentialGenerationOptions.map((option) => (
+                            <SelectItem key={option} value={option}>
+                              {option === 'disabled' ? 'Disabled' : 'Auto'}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Max Images</label>
+                      <Input
+                        type="number"
+                        min={1}
+                        max={15}
+                        value={modelSettings.maxImages}
+                        onChange={(event) => {
+                          const parsed = Number(event.target.value);
+                          if (Number.isFinite(parsed)) {
+                            updateModelSettings({
+                              maxImages: Math.min(Math.max(Math.floor(parsed), 1), 15),
+                            });
+                          }
+                        }}
+                        disabled={isLoading || modelSettings.sequentialImageGeneration !== 'auto'}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Only used when sequential generation is set to auto.
+                      </p>
+                    </div>
+                  </div>
+
+                  {modelSettings.size === 'custom' && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Width (px)</label>
+                        <Input
+                          type="number"
+                          min={1024}
+                          max={4096}
+                          value={modelSettings.width}
+                          onChange={(event) => updateModelSettings({ width: event.target.value })}
+                          disabled={isLoading}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Height (px)</label>
+                        <Input
+                          type="number"
+                          min={1024}
+                          max={4096}
+                          value={modelSettings.height}
+                          onChange={(event) => updateModelSettings({ height: event.target.value })}
+                          disabled={isLoading}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Reference Image URLs</label>
+                    <Textarea
+                      value={modelSettings.imageInput}
+                      onChange={(event) => updateModelSettings({ imageInput: event.target.value })}
+                      placeholder="Optional: one URL per line or separated by commas"
+                      disabled={isLoading}
+                      rows={3}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Up to 10 image URLs for image-to-image guidance.
+                    </p>
                   </div>
                 </div>
 
